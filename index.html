@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>冷蔵庫レシピ</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body { background: linear-gradient(135deg, #fff7ed 0%, #fef3c7 100%); min-height: 100vh; }
+    .spinner { animation: spin 1s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body class="p-4">
+
+<!-- APIキー設定モーダル -->
+<div id="apiModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+  <div class="bg-white rounded-2xl p-6 w-full max-w-sm shadow-xl space-y-4">
+    <div class="text-center">
+      <div class="text-4xl mb-2">🔑</div>
+      <h2 class="font-bold text-gray-800 text-lg">Gemini APIキーを入力</h2>
+      <p class="text-gray-500 text-sm mt-1">Google AI StudioのAPIキーを入力してください。<br>このデバイスにのみ保存されます。</p>
+    </div>
+    <input id="apiKeyInput" type="password" placeholder="AIza..."
+      class="w-full border border-gray-200 rounded-xl px-4 py-2 text-sm outline-none focus:border-orange-400" />
+    <button onclick="saveApiKey()"
+      class="w-full bg-orange-500 hover:bg-orange-600 text-white font-bold py-3 rounded-xl text-sm transition-colors">
+      保存して始める
+    </button>
+    <p class="text-xs text-gray-400 text-center">
+      キーは <a href="https://aistudio.google.com/app/apikey" target="_blank" class="underline text-orange-400">aistudio.google.com</a> で無料取得できます
+    </p>
+  </div>
+</div>
+
+<!-- メインアプリ -->
+<div class="max-w-xl mx-auto space-y-5">
+  <!-- Header -->
+  <div class="text-center pt-6 pb-2">
+    <div class="text-5xl mb-2">🧑‍🍳</div>
+    <h1 class="text-2xl font-bold text-gray-800">冷蔵庫レシピ</h1>
+    <p class="text-gray-500 text-sm mt-1">食材を入力するだけで、AIがレシピを提案！</p>
+    <button onclick="resetApiKey()" class="text-xs text-gray-400 underline mt-1">APIキーを変更</button>
+  </div>
+
+  <!-- 食材入力 -->
+  <div class="bg-white rounded-2xl shadow-sm p-5 space-y-3 border border-gray-100">
+    <h2 class="font-bold text-gray-700">🥦 食材を入力</h2>
+    <div class="flex gap-2">
+      <input id="ingInput" type="text" placeholder="例：卵、じゃがいも、鶏肉..."
+        class="flex-1 border border-gray-200 rounded-xl px-4 py-2 text-sm outline-none focus:border-orange-400"
+        onkeydown="if(event.key==='Enter') addIngredient()" />
+      <button onclick="addIngredient()"
+        class="bg-orange-500 hover:bg-orange-600 text-white px-4 py-2 rounded-xl text-sm font-bold transition-colors">
+        追加
+      </button>
+    </div>
+    <div id="tagList" class="flex flex-wrap gap-2 pt-1"></div>
+  </div>
+
+  <!-- ジャンル選択 -->
+  <div class="bg-white rounded-2xl shadow-sm p-5 border border-gray-100">
+    <h2 class="font-bold text-gray-700 mb-3">🍜 料理ジャンル</h2>
+    <div class="flex flex-wrap gap-2" id="genreButtons"></div>
+  </div>
+
+  <!-- 料理タイプ -->
+  <div class="bg-white rounded-2xl shadow-sm p-5 border border-gray-100">
+    <h2 class="font-bold text-gray-700 mb-3">🍱 料理のタイプ</h2>
+    <input id="dishType" type="text" placeholder="例：主菜、スープ、おつまみ..."
+      class="w-full border border-gray-200 rounded-xl px-4 py-2 text-sm outline-none focus:border-orange-400" />
+  </div>
+
+  <!-- エラー -->
+  <p id="errorMsg" class="hidden text-red-500 text-sm text-center bg-red-50 rounded-xl p-3 border border-red-100"></p>
+
+  <!-- 生成ボタン -->
+  <button id="generateBtn" onclick="generateRecipes()"
+    class="w-full bg-orange-500 hover:bg-orange-600 text-white font-bold py-3.5 rounded-2xl text-base shadow-md transition-colors">
+    ✨ レシピを生成する
+  </button>
+
+  <!-- レシピ一覧 -->
+  <div id="recipeList" class="space-y-3 pb-8"></div>
+</div>
+
+<script>
+  const GENRES = ["なんでも", "和食", "洋食", "中華", "イタリアン", "韓国料理"];
+  let ingredients = [];
+  let selectedGenre = "なんでも";
+
+  // APIキー管理
+  function saveApiKey() {
+    const key = document.getElementById("apiKeyInput").value.trim();
+    if (!key) { alert("APIキーを入力してください"); return; }
+    localStorage.setItem("gemini_api_key", key);
+    document.getElementById("apiModal").style.display = "none";
+  }
+
+  function resetApiKey() {
+    localStorage.removeItem("gemini_api_key");
+    document.getElementById("apiKeyInput").value = "";
+    document.getElementById("apiModal").style.display = "flex";
+  }
+
+  function getApiKey() { return localStorage.getItem("gemini_api_key"); }
+
+  // 初期化
+  window.onload = () => {
+    if (getApiKey()) document.getElementById("apiModal").style.display = "none";
+    renderGenres();
+  };
+
+  // ジャンルボタン
+  function renderGenres() {
+    document.getElementById("genreButtons").innerHTML = GENRES.map(g => `
+      <button onclick="selectGenre('${g}')"
+        class="px-4 py-1.5 rounded-full text-sm font-medium transition-colors border ${
+          g === selectedGenre
+            ? 'bg-orange-500 text-white border-orange-500'
+            : 'bg-white text-gray-600 border-gray-200'
+        }">
+        ${g}
+      </button>
+    `).join("");
+  }
+
+  function selectGenre(g) { selectedGenre = g; renderGenres(); }
+
+  // 食材管理
+  function addIngredient() {
+    const input = document.getElementById("ingInput");
+    const val = input.value.trim();
+    if (val && !ingredients.includes(val)) { ingredients.push(val); renderTags(); }
+    input.value = "";
+    input.focus();
+  }
+
+  function removeIngredient(i) { ingredients.splice(i, 1); renderTags(); }
+
+  function renderTags() {
+    document.getElementById("tagList").innerHTML = ingredients.map((ing, i) => `
+      <span class="inline-flex items-center gap-1 bg-orange-100 text-orange-700 px-3 py-1 rounded-full text-sm font-medium">
+        ${ing}
+        <button onclick="removeIngredient(${i})" class="font-bold hover:text-orange-900">×</button>
+      </span>
+    `).join("");
+  }
+
+  // エラー表示
+  function showError(msg) {
+    const el = document.getElementById("errorMsg");
+    el.textContent = msg;
+    el.classList.remove("hidden");
+  }
+  function clearError() { document.getElementById("errorMsg").classList.add("hidden"); }
+
+  // レシピ生成（Gemini API）
+  async function generateRecipes() {
+    if (ingredients.length === 0) { showError("食材を1つ以上入力してください。"); return; }
+    const apiKey = getApiKey();
+    if (!apiKey) { document.getElementById("apiModal").style.display = "flex"; return; }
+
+    clearError();
+    const btn = document.getElementById("generateBtn");
+    btn.disabled = true;
+    btn.innerHTML = `<svg class="spinner inline w-5 h-5 mr-2" viewBox="0 0 24 24" fill="none">
+      <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+      <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+    </svg>レシピを考え中...`;
+    document.getElementById("recipeList").innerHTML = "";
+
+    const dishType = document.getElementById("dishType").value.trim();
+    const prompt = `冷蔵庫にある食材：${ingredients.join("、")}
+料理ジャンル：${selectedGenre === "なんでも" ? "指定なし" : selectedGenre}
+料理のタイプ：${dishType || "指定なし"}
+
+上記の食材を使って作れる料理を3品提案してください。
+材料の分量は1人分を基準とし、3人分を括弧内に併記してください（例：卵 1個（3個））。
+必ず以下のJSON形式のみで返答してください（マークダウン記法や説明文は不要）：
+{
+  "recipes": [
+    {
+      "name": "料理名",
+      "description": "一言説明（20字以内）",
+      "ingredients": ["卵 1個（3個）", "醤油 小さじ1（大さじ1）"],
+      "steps": ["手順1", "手順2", "手順3"],
+      "tip": "調理のコツ"
+    }
+  ]
+}`;
+
+    try {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: { temperature: 0.7, maxOutputTokens: 2048 }
+        })
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        showError("APIエラー: " + (data.error?.message || res.status));
+        return;
+      }
+
+      const text = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
+      const match = text.match(/\{[\s\S]*\}/);
+      if (!match) { showError("レスポンスの解析に失敗しました。"); return; }
+
+      const parsed = JSON.parse(match[0]);
+      renderRecipes(parsed.recipes || []);
+    } catch (e) {
+      showError("エラー: " + e.message);
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = "✨ レシピを生成する";
+    }
+  }
+
+  // レシピ表示
+  function renderRecipes(recipes) {
+    document.getElementById("recipeList").innerHTML = `
+      <h2 class="font-bold text-gray-700 text-center">🍽️ おすすめレシピ ${recipes.length}品</h2>
+      ${recipes.map((r, i) => `
+        <div class="bg-white rounded-2xl shadow-md overflow-hidden border border-gray-100">
+          <button onclick="toggleRecipe(${i})"
+            class="w-full flex items-center justify-between px-5 py-4 hover:bg-gray-50 transition-colors">
+            <div class="flex items-center gap-3">
+              <span class="bg-orange-500 text-white rounded-full w-7 h-7 flex items-center justify-center text-sm font-bold shrink-0">
+                ${i + 1}
+              </span>
+              <span class="font-bold text-gray-800 text-lg text-left">${r.name}</span>
+            </div>
+            <span id="arrow-${i}" class="text-gray-400 text-xl">${i === 0 ? "▲" : "▼"}</span>
+          </button>
+          <div id="body-${i}" class="${i === 0 ? "" : "hidden"} px-5 pb-5 space-y-4 border-t border-gray-100">
+            ${r.description ? `<p class="text-gray-500 text-sm pt-3 italic">${r.description}</p>` : ""}
+            <div>
+              <h4 class="font-semibold text-gray-700 mb-2">🛒 材料 <span class="text-xs font-normal text-gray-400">1人分（3人分）</span></h4>
+              <ul class="grid grid-cols-2 gap-1">
+                ${(r.ingredients || []).map(ing => `
+                  <li class="text-sm text-gray-600 flex items-start gap-1">
+                    <span class="text-orange-400 mt-0.5">•</span>${ing}
+                  </li>`).join("")}
+              </ul>
+            </div>
+            <div>
+              <h4 class="font-semibold text-gray-700 mb-2">📋 作り方</h4>
+              <ol class="space-y-2">
+                ${(r.steps || []).map((s, si) => `
+                  <li class="text-sm text-gray-600 flex gap-2">
+                    <span class="bg-orange-100 text-orange-600 rounded-full w-5 h-5 flex items-center justify-center font-bold shrink-0 mt-0.5 text-xs">
+                      ${si + 1}
+                    </span>${s}
+                  </li>`).join("")}
+              </ol>
+            </div>
+            ${r.tip ? `
+            <div class="bg-yellow-50 border border-yellow-200 rounded-xl p-3">
+              <p class="text-sm text-yellow-800">💡 <span class="font-semibold">コツ：</span>${r.tip}</p>
+            </div>` : ""}
+          </div>
+        </div>
+      `).join("")}
+    `;
+  }
+
+  function toggleRecipe(i) {
+    const body = document.getElementById(`body-${i}`);
+    const arrow = document.getElementById(`arrow-${i}`);
+    const isHidden = body.classList.toggle("hidden");
+    arrow.textContent = isHidden ? "▼" : "▲";
+  }
+</script>
+</body>
+</html>
