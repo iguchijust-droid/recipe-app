@@ -191,7 +191,7 @@
 }`;
 
     try {
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=${apiKey}`;
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
       const res = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -212,7 +212,9 @@
       if (!match) { showError("レスポンスの解析に失敗しました。"); return; }
 
       const parsed = JSON.parse(match[0]);
-      renderRecipes(parsed.recipes || []);
+      const recipes = parsed.recipes || [];
+      renderRecipes(recipes);
+      recipes.forEach((r, i) => fetchWikiImage(r.name, i));
     } catch (e) {
       showError("エラー: " + e.message);
     } finally {
@@ -227,9 +229,7 @@
       <h2 class="font-bold text-gray-700 text-center">🍽️ おすすめレシピ ${recipes.length}品</h2>
       ${recipes.map((r, i) => `
         <div class="bg-white rounded-2xl shadow-md overflow-hidden border border-gray-100">
-          <img src="https://image.pollinations.ai/prompt/${encodeURIComponent(r.name+' japanese food dish photo realistic')}"
-            alt="${r.name}" class="w-full h-40 object-cover bg-gray-100"
-            onerror="this.style.display='none'" />
+          <div id="img-${i}" class="w-full h-40 bg-gray-100 flex items-center justify-center text-gray-300 text-4xl">🍽️</div>
           <button onclick="toggleRecipe(${i})"
             class="w-full flex items-center justify-between px-5 py-4 hover:bg-gray-50 transition-colors">
             <div class="flex items-center gap-3">
@@ -270,6 +270,20 @@
         </div>
       `).join("")}
     `;
+  }
+
+  async function fetchWikiImage(name, i) {
+    try {
+      const url = `https://ja.wikipedia.org/w/api.php?action=query&titles=${encodeURIComponent(name)}&prop=pageimages&format=json&pithumbsize=400&origin=*`;
+      const res = await fetch(url);
+      const data = await res.json();
+      const pages = data.query.pages;
+      const page = Object.values(pages)[0];
+      const imgEl = document.getElementById(`img-${i}`);
+      if (page.thumbnail?.source && imgEl) {
+        imgEl.innerHTML = `<img src="${page.thumbnail.source}" alt="${name}" class="w-full h-full object-cover" />`;
+      }
+    } catch(e) {}
   }
 
   function toggleRecipe(i) {
