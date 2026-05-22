@@ -227,9 +227,9 @@
       <h2 class="font-bold text-gray-700 text-center">🍽️ おすすめレシピ ${recipes.length}品</h2>
       ${recipes.map((r, i) => `
         <div class="bg-white rounded-2xl shadow-md overflow-hidden border border-gray-100">
-          <img src="https://source.unsplash.com/400x200/?${encodeURIComponent(r.name+' food japanese')}&sig=${i}"
-            alt="${r.name}" class="w-full h-40 object-cover"
-            onerror="this.src='https://source.unsplash.com/400x200/?food&sig=${i}'" />
+          <img src="https://image.pollinations.ai/prompt/${encodeURIComponent(r.name+' japanese food dish photo realistic')}"
+            alt="${r.name}" class="w-full h-40 object-cover bg-gray-100"
+            onerror="this.style.display='none'" />
           <button onclick="toggleRecipe(${i})"
             class="w-full flex items-center justify-between px-5 py-4 hover:bg-gray-50 transition-colors">
             <div class="flex items-center gap-3">
